@@ -1,4 +1,5 @@
 #include "mockedauparseinterface.h"
+#include <stdexcept>
 
 namespace zeek {
 struct MockedAuparseInterface::PrivateData final {
