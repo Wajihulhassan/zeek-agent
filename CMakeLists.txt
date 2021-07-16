@@ -128,3 +128,6 @@ endfunction()
 
 configureCcache()
 zeekAgent()
+set(CPACK_GENERATOR ZIP)
+set(CPACK_INSTALL_CMAKE_CONFIGURATIONS Release)
+include(CPack)
