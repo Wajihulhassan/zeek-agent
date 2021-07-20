@@ -19,8 +19,8 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        build_type: [Release, Debug]
-        zeek_version: ['3.0', '3.1']
+        build_type: [Release]
+        zeek_version: ['3.1']
 
     steps:
     - uses: actions/checkout@v2
@@ -87,10 +87,12 @@ jobs:
         sudo apt-get update -y
         sudo apt-get install -y libunwind-dev
         sudo apt-get install -y libssl-dev
+        sudo apt-get install -y libdpkg-dev
+        sudo apt-get install -y libdpkg-perl
         sudo update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100
         sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 100
         export CCACHE_DIR="$(realpath ccache)"
-        ( cd build && ${{ steps.cmake_installer.outputs.CMAKE_BINARY }} -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DZEEK_AGENT_ENABLE_INSTALL:BOOL=ON -DZEEK_AGENT_ENABLE_TESTS:BOOL=ON -DZEEK_AGENT_ZEEK_COMPATIBILITY:STRING="${{matrix.zeek_version}}" ../ )
+        ( cd build && ${{ steps.cmake_installer.outputs.CMAKE_BINARY }} -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DZEEK_AGENT_ENABLE_DOCUMENTATION:BOOL=true -DZEEK_AGENT_ENABLE_INSTALL:BOOL=ON -DZEEK_AGENT_ENABLE_TESTS:BOOL=ON -DZEEK_AGENT_ENABLE_SANITIZERS:BOOL="${{ steps.sanitizers_settings.outputs.VALUE }}" -DZEEK_AGENT_ZEEK_COMPATIBILITY:STRING="${{matrix.zeek_version}}" ../ )
 
     - name: Build the project
       run: |
@@ -154,7 +156,7 @@ jobs:
   linux_packaging:
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
     needs: linux_build
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Download the DEB package from the linux_build job (Release, Zeek 3.0)
