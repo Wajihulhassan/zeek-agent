@@ -115,7 +115,7 @@ jobs:
     - name: Configure the packaging project
       run: |
         export ZEEK_AGENT_INSTALL_PATH="$(realpath install)"
-        ( cd package && ${{ steps.cmake_installer.outputs.CMAKE_BINARY }} -G Ninja -DZEEK_AGENT_ZEEK_COMPATIBILITY:STRING="${{ matrix.zeek_version }}" -DZEEK_AGENT_INSTALL_PATH:PATH="${ZEEK_AGENT_INSTALL_PATH}" -DCMAKE_INSTALL_PREFIX:PATH="/usr" ../packaging )
+        ( cd package && ${{ steps.cmake_installer.outputs.CMAKE_BINARY }} -G Ninja -DZEEK_AGENT_ZEEK_COMPATIBILITY:STRING="${{ matrix.zeek_version }}" -DZEEK_AGENT_INSTALL_PATH:PATH="${ZEEK_AGENT_INSTALL_PATH}" ../ )
 
     - name: Build the packages
       run: |
