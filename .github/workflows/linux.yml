@@ -18,24 +18,16 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-18.04]
+        os: [ubuntu-20.04]
         build_type: [Release, Debug]
         zeek_version: ['3.0', '3.1']
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Select the osquery-toolchain version
-      id: osquery_toolchain_version
-      run: echo ::set-output name=VALUE::1.1.0
-
     - name: Select the CMake version
       id: cmake_version
-      run: echo ::set-output name=VALUE::3.17.0
-
-    - name: Select the osquery version
-      id: osquery_version
-      run: echo ::set-output name=VALUE::4.2.0
+      run: echo ::set-output name=VALUE::3.16.3
 
     - name: Select the sanitizers setting
       id: sanitizers_settings
@@ -46,23 +38,9 @@ jobs:
           echo ::set-output name=VALUE::false
         fi
 
-    - name: Acquire the osquery source code
-      run: |
-        git clone --branch "${{ steps.osquery_version.outputs.VALUE }}" https://github.com/osquery/osquery osquery
-        mkdir -p osquery/.git/modules
-
-    - name: Update the osquery/bzip2 submodule
-      run: |
-        sed -i.bak 's=https://sourceware.org/git/bzip2.git=https://github.com/osquery/third-party-bzip2=g' "osquery/.gitmodules"
-        rm osquery/.gitmodules.bak
-
-    - name: Update the osquery/OpenSSL 1.0.2t download link
-      run: |
-        sed -i 's=https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz=https://www.openssl.org/source/old/1.0.2/openssl-1.0.2t.tar.gz=g' "osquery/libraries/cmake/formula/openssl/CMakeLists.txt"
-
     - name: Generate the cache key
       id: cache_key
-      run: echo ::set-output name=VALUE::${{ matrix.os }}_type-${{ matrix.build_type }}_osquery-toolchain-${{ steps.osquery_toolchain_version.outputs.VALUE }}_cmake-${{ steps.cmake_version.outputs.VALUE }}_zeek-version-${{ matrix.zeek_version }}
+      run: echo ::set-output name=VALUE::${{ matrix.os }}_type-${{ matrix.build_type }}_osquery-toolchain-1.1.0_cmake-${{ steps.cmake_version.outputs.VALUE }}_zeek-version-${{ matrix.zeek_version }}
 
     - name: Update the cache (ccache)
       uses: actions/cache@v1.0.3
@@ -82,12 +60,6 @@ jobs:
         path: .git/modules
         key: ${{ steps.cache_key.outputs.VALUE }}_zeekagent_gitsubmodules
 
-    - name: Update the cache (git submodules - osquery)
-      uses: actions/cache@v1.0.3
-      with:
-        path: osquery/.git/modules
-        key: ${{ steps.cache_key.outputs.VALUE }}_osquery_gitsubmodules
-
     - name: Create the build folders
       run: mkdir -p ccache build install downloads package
 
@@ -96,16 +68,6 @@ jobs:
 
     - name: Update the submodules
       run: git submodule update --init --recursive
-
-    - name: Install the osquery-toolchain
-      id: osquery_toolchain_installer
-      run: |
-        if [ ! -f downloads/osquery-toolchain.tar.xz ] ; then
-          curl -L "https://github.com/osquery/osquery-toolchain/releases/download/${{ steps.osquery_toolchain_version.outputs.VALUE }}/osquery-toolchain-${{ steps.osquery_toolchain_version.outputs.VALUE }}-x86_64.tar.xz" -o downloads/osquery-toolchain.tar.xz
-        fi
-
-        tar xf downloads/osquery-toolchain.tar.xz
-        echo ::set-output name=PATH::$(realpath osquery-toolchain)
 
     - name: Install system dependencies
       run: sudo apt-get install cppcheck ccache curl flex bison rpm doxygen ninja-build graphviz -y
@@ -120,18 +82,20 @@ jobs:
         tar xzf downloads/cmake.tar.gz
         echo ::set-output name=CMAKE_BINARY::$(realpath $(find cmake* -type d -name bin)/cmake)
 
-    - name: Link the Zeek Agent source folder inside the osquery source tree
-      run: ln -s "$(pwd)" "$(realpath osquery)/external/extension_zeek-agent"
-
     - name: Configure the project
       run: |
+        sudo apt-get update -y
+        sudo apt-get install -y libunwind-dev
+        sudo apt-get install -y libssl-dev
+        sudo update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100
+        sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 100
         export CCACHE_DIR="$(realpath ccache)"
-        ( cd build && "${{ steps.cmake_installer.outputs.CMAKE_BINARY }}" -G Ninja -DOSQUERY_NO_DEBUG_SYMBOLS:BOOL=true -DOSQUERY_TOOLCHAIN_SYSROOT:PATH="${{ steps.osquery_toolchain_installer.outputs.PATH }}" -DCMAKE_INSTALL_PREFIX:PATH="/usr" -DCMAKE_BUILD_TYPE:STRING="${{ matrix.build_type }}" -DZEEK_AGENT_ENABLE_DOCUMENTATION:BOOL=true -DZEEK_AGENT_ENABLE_INSTALL:BOOL=true -DZEEK_AGENT_ENABLE_TESTS:BOOL=true -DZEEK_AGENT_ENABLE_SANITIZERS:BOOL="${{ steps.sanitizers_settings.outputs.VALUE }}" -DZEEK_AGENT_ZEEK_COMPATIBILITY:STRING="${{ matrix.zeek_version }}" ../osquery )
+        ( cd build && ${{ steps.cmake_installer.outputs.CMAKE_BINARY }} -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DZEEK_AGENT_ENABLE_INSTALL:BOOL=ON -DZEEK_AGENT_ENABLE_TESTS:BOOL=ON -DZEEK_AGENT_ZEEK_COMPATIBILITY:STRING="${{matrix.zeek_version}}" ../ )
 
     - name: Build the project
       run: |
         export CCACHE_DIR="$(realpath ccache)"
-        ( cd build && cmake --build . -- -v)
+        ( cd build && cmake --build .)
 
     - name: Build the documentation
       run: ( cd build && cmake --build . --target doxygen -- -v )
@@ -139,12 +103,12 @@ jobs:
     - name: Run the tests
       run: |
         export ASAN_OPTIONS=detect_container_overflow=0
-        ( cd build && cmake --build . --target zeek_agent_tests -- -v )
+        ( cd build && cmake --build . --target zeek_agent_tests )
 
     - name: Install the project
       run: |
         export DESTDIR="$(realpath install)"
-        ( cd build && cmake --build . --target install -- -v )
+        ( cd build && cmake --build . --target install )
 
     - name: Configure the packaging project
       run: |
@@ -154,11 +118,17 @@ jobs:
     - name: Build the packages
       run: |
         export DESTDIR="$(realpath install)"
-        ( cd package && cmake --build . --target package -- -v )
+        ( cd package && cmake --build . --target package )
 
     - name: Locate the packages
       id: package_locations
       run: |
+        cd /home/runner/work/zeek-agent/zeek-agent/build
+        echo "Following Items are present in the build folder"
+        ls
+        cd /home/runner/work/zeek-agent/zeek-agent/package
+        echo "Following Items are present in the package folder"
+        ls
         echo ::set-output name=DEB_PACKAGE_PATH::$(ls package/*.deb)
         echo ::set-output name=RPM_PACKAGE_PATH::$(ls package/*.rpm)
         echo ::set-output name=TARGZ_PACKAGE_PATH::$(ls package/*.tar.gz)
