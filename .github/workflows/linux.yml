@@ -125,33 +125,51 @@ jobs:
     - name: Locate the packages
       id: package_locations
       run: |
+        echo ::set-output name=DEB_PACKAGE_PATH::$(ls *.zip)
         cd /home/runner/work/zeek-agent/zeek-agent/build
         echo "Following Items are present in the build folder"
         ls
         cd /home/runner/work/zeek-agent/zeek-agent/package
         echo "Following Items are present in the package folder"
         ls
-        echo ::set-output name=DEB_PACKAGE_PATH::$(ls package/*.deb)
-        echo ::set-output name=RPM_PACKAGE_PATH::$(ls package/*.rpm)
-        echo ::set-output name=TARGZ_PACKAGE_PATH::$(ls package/*.tar.gz)
-
     - name: Store the .deb package artifact
       uses: actions/upload-artifact@v1
       with:
         name: linux_deb_package-${{ matrix.build_type }}-${{ matrix.zeek_version }}
         path: ${{ steps.package_locations.outputs.DEB_PACKAGE_PATH }}
-
-    - name: Store the .rpm package artifact
-      uses: actions/upload-artifact@v1
+    
+    - name: Download the DEB package from the linux_build job (Release, Zeek 3.1)
+      uses: actions/download-artifact@v1
       with:
-        name: linux_rpm_package-${{ matrix.build_type }}-${{ matrix.zeek_version }}
-        path: ${{ steps.package_locations.outputs.RPM_PACKAGE_PATH }}
-
-    - name: Store the .tar.gz package artifact
-      uses: actions/upload-artifact@v1
+        name: linux_deb_package-Release-3.1
+    
+    - name: Locate the Zeek 3.1 packages
+      id: zeek31_package_locations
+      run: |
+        echo ::set-output name=DEB_PACKAGE_PATH::$(ls linux_deb_package-Release-3.1/*.zip)
+        echo ::set-output name=DEB_ASSET_NAME::zeek31_$(cd linux_deb_package-Release-3.1 && ls *.zip)
+        
+    - name: Draft the new release
+      id: create_release
+      uses: actions/create-release@v1.0.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: linux_targz_package-${{ matrix.build_type }}-${{ matrix.zeek_version }}
-        path: ${{ steps.package_locations.outputs.TARGZ_PACKAGE_PATH }}
+        tag_name: ${{ github.ref }}
+        release_name: Version ${{ github.ref }}
+        draft: false
+        prerelease: false
+        
+    - name: Upload the Zeek 3.1 .deb package
+      id: upload_deb_package_zeek31
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ steps.zeek31_package_locations.outputs.DEB_PACKAGE_PATH }}
+        asset_name: ${{ steps.zeek31_package_locations.outputs.DEB_ASSET_NAME }}
+        asset_content_type: application/vnd.debian.binary-package
 
   linux_packaging:
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
